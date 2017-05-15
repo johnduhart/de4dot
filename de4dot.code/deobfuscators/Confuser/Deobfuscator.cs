@@ -69,7 +69,7 @@ namespace de4dot.code.deobfuscators.Confuser {
 	class Deobfuscator : DeobfuscatorBase, IStringDecrypter {
 		Options options;
 		string obfuscatorName = DeobfuscatorInfo.THE_NAME;
-		Version approxVersion;
+	    protected Version approxVersion;
 
 		List<EmbeddedAssemblyInfo> embeddedAssemblyInfos = new List<EmbeddedAssemblyInfo>();
 		JitMethodsDecrypter jitMethodsDecrypter;
@@ -197,7 +197,7 @@ namespace de4dot.code.deobfuscators.Confuser {
 
 			proxyCallFixer = new ProxyCallFixer(module, GetFileData());
 			proxyCallFixer.FindDelegateCreator(DeobfuscatedFile);
-			antiDebugger = new AntiDebugger(module);
+			antiDebugger = CreateAntiDebugger();
 			antiDebugger.Find();
 			antiDumping = new AntiDumping(module);
 			antiDumping.Find(DeobfuscatedFile);
@@ -209,7 +209,10 @@ namespace de4dot.code.deobfuscators.Confuser {
 			InitializeObfuscatorName();
 		}
 
-		void InitializeObfuscatorName() {
+	    protected virtual AntiDebugger CreateAntiDebugger()
+            => new AntiDebugger(module);
+
+	    void InitializeObfuscatorName() {
 			var versionString = GetVersionString();
 			if (string.IsNullOrEmpty(versionString))
 				obfuscatorName = DeobfuscatorInfo.THE_NAME;
@@ -531,7 +534,7 @@ namespace de4dot.code.deobfuscators.Confuser {
 			}
 		}
 
-		void SetConfuserVersion(TypeDef type) {
+	    protected virtual void SetConfuserVersion(TypeDef type) {
 			var s = DotNetUtils.GetCustomArgAsString(GetModuleAttribute(type) ?? GetAssemblyAttribute(type), 0);
 			if (s == null)
 				return;

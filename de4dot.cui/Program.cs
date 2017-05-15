@@ -72,7 +72,8 @@ namespace de4dot.cui {
 				new de4dot.code.deobfuscators.CodeFort.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.CodeVeil.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.CodeWall.DeobfuscatorInfo(),
-				new de4dot.code.deobfuscators.Confuser.DeobfuscatorInfo(),
+				//new de4dot.code.deobfuscators.Confuser.DeobfuscatorInfo(),
+                new de4dot.code.deobfuscators.ConfuserEx.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.CryptoObfuscator.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.DeepSea.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.Dotfuscator.DeobfuscatorInfo(),
@@ -175,7 +176,10 @@ namespace de4dot.cui {
 			return false;
 		}
 
-		static bool IsN00bUser() {
+		static bool IsN00bUser()
+		{
+		    if (HasEnv("DE4DOT_NOPAUSE"))
+		        return false;
 			if (HasEnv("VisualStudioDir"))
 				return false;
 			if (HasEnv("SHELL"))
