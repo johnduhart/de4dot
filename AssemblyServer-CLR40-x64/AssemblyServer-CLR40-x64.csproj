@@ -44,12 +44,6 @@
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\AssemblyData\AssemblyData.csproj">
-      <Project>{FBD84077-9D35-41FE-89DF-8D79EFE0B595}</Project>
-      <Name>AssemblyData</Name>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

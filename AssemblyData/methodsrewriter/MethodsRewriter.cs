@@ -25,7 +25,7 @@ using System.Reflection.Emit;
 using dnlib.DotNet.Emit;
 using dnlib.DotNet;
 using de4dot.blocks;
-
+using ExceptionHandler = dnlib.DotNet.Emit.ExceptionHandler;
 using OpCode = dnlib.DotNet.Emit.OpCode;
 using OpCodes = dnlib.DotNet.Emit.OpCodes;
 using ROpCode = System.Reflection.Emit.OpCode;
