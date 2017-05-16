@@ -25,17 +25,26 @@ using dnlib.DotNet;
 using dnlib.IO;
 
 namespace de4dot.code {
-	// These are in .NET 3.5 and later...
-	public delegate TResult Func<TResult>();
-	public delegate TResult Func<T, TResult>(T arg);
-	public delegate TResult Func<T1, T2, TResult>(T1 arg1, T2 arg2);
-	public delegate TResult Func<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3);
-	public delegate void Action();
-	public delegate void Action<T>(T arg);
-	public delegate void Action<T1, T2>(T1 arg1, T2 arg2);
-	public delegate void Action<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3);
+    // These are in .NET 3.5 and later...
+    [Obsolete("Use BCL types")]
+    public delegate TResult Func<TResult>();
+    [Obsolete("Use BCL types")]
+    public delegate TResult Func<T, TResult>(T arg);
+    [Obsolete("Use BCL types")]
+    public delegate TResult Func<T1, T2, TResult>(T1 arg1, T2 arg2);
+    [Obsolete("Use BCL types")]
+    public delegate TResult Func<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3);
+    [Obsolete("Use BCL types")]
+    public delegate void Action();
+    [Obsolete("Use BCL types")]
+    public delegate void Action<T>(T arg);
+    [Obsolete("Use BCL types")]
+    public delegate void Action<T1, T2>(T1 arg1, T2 arg2);
+    [Obsolete("Use BCL types")]
+    public delegate void Action<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3);
 
-	public class Tuple<T1, T2> {
+    [Obsolete("Use BCL types")]
+    public class Tuple<T1, T2> {
 		public T1 Item1 { get; set; }
 		public T2 Item2 { get; set; }
 		public override bool Equals(object obj) {
