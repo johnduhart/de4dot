@@ -1,6 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Linq;
 using de4dot.blocks;
+using de4dot.blocks.cflow;
 using de4dot.code.deobfuscators.Confuser;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -48,10 +49,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
     internal class Deobfuscator : DeobfuscatorBase
     {
+        private bool _foundAttribute;
         private AntiDebugger _antiDebugger;
+        private ICflowDeobfuscator _cflowDeobfuscator;
 
         public Deobfuscator(Options options) : base(options)
         {
+            _cflowDeobfuscator = new CflowDeobfuscator();
         }
 
         public override string Type => DeobfuscatorInfo.TheType;
@@ -77,12 +81,27 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         protected override int DetectInternal()
         {
-            throw new NotImplementedException();
+            int detected = AllDetectors.Where(d => d.Detected)
+                .Select(_ => 1)
+                .Sum();
+
+            if (detected > 0 || _foundAttribute)
+            {
+                return 100 + 10 * (detected - 1);
+            }
+
+            return 0;
         }
 
         public override IEnumerable<int> GetStringDecrypterMethods()
         {
-            throw new NotImplementedException();
+            return Enumerable.Empty<int>();
+            //throw new NotImplementedException();
+        }
+
+        public override IEnumerable<IBlocksDeobfuscator> BlocksDeobfuscators
+        {
+            get { yield return new BlocksDeobfuscator(); }
         }
 
         void RemoveObfuscatorAttribute()
@@ -91,11 +110,25 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 if (type.FullName == "ConfusedByAttribute")
                 {
+                    _foundAttribute = true;
                     AddAttributeToBeRemoved(type, "Obfuscator attribute");
                     break;
                 }
             }
         }
+
+        /*public override void DeobfuscateBegin()
+        {
+            base.DeobfuscateBegin();
+
+            foreach (TypeDef typeDef in module.GetTypes())
+            {
+                foreach (MethodDef methodDef in typeDef.Methods)
+                {
+                    _cflowDeobfuscator.Deobfuscate(methodDef);
+                }
+            }
+        }*/
 
         /*protected override void SetConfuserVersion(TypeDef type)
         {

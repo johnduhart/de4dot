@@ -17,19 +17,21 @@
     along with de4dot.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System;
 using System.Collections.Generic;
 
 namespace de4dot.blocks {
-	internal delegate TResult Func<TResult>();
-	internal delegate TResult Func<T, TResult>(T arg);
-	internal delegate TResult Func<T1, T2, TResult>(T1 arg1, T2 arg2);
-	internal delegate TResult Func<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3);
-	internal delegate void Action();
-	internal delegate void Action<T>(T arg);
-	internal delegate void Action<T1, T2>(T1 arg1, T2 arg2);
-	internal delegate void Action<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3);
+    [Obsolete("Use BCL")] internal delegate TResult Func<TResult>();
+    [Obsolete("Use BCL")] internal delegate TResult Func<T, TResult>(T arg);
+    [Obsolete("Use BCL")] internal delegate TResult Func<T1, T2, TResult>(T1 arg1, T2 arg2);
+    [Obsolete("Use BCL")] internal delegate TResult Func<T1, T2, T3, TResult>(T1 arg1, T2 arg2, T3 arg3);
+    [Obsolete("Use BCL")] internal delegate void Action();
+    [Obsolete("Use BCL")] internal delegate void Action<T>(T arg);
+    [Obsolete("Use BCL")] internal delegate void Action<T1, T2>(T1 arg1, T2 arg2);
+    [Obsolete("Use BCL")] internal delegate void Action<T1, T2, T3>(T1 arg1, T2 arg2, T3 arg3);
 
-	public class Tuple<T1, T2> {
+    [Obsolete("Use BCL")]
+    public class Tuple<T1, T2> {
 		public T1 Item1 { get; set; }
 		public T2 Item2 { get; set; }
 		public override bool Equals(object obj) {
