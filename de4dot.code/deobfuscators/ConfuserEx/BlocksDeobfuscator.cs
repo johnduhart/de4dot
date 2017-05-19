@@ -398,6 +398,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     _instructionEmulator.Emulate(currentBlock.LastInstr.Instruction);
                     EmulateSwitchHeader();
                     Block targetBlock = NextSwitchBlock();
+
+                    currentBlock.ReplaceLastInstrsWithBranch(1, targetBlock);
+
                     EnqueueBranch(targetBlock);
 
                     return;
