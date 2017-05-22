@@ -676,6 +676,28 @@ namespace de4dot.blocks {
 			return false;
 		}
 
+	    public static bool CallsMethod(MethodDef callingMethod, MethodDef calledMethod)
+	    {
+	        if (callingMethod == null || callingMethod.Body == null || calledMethod == null)
+	            return false;
+
+	        foreach (var instr in callingMethod.Body.Instructions)
+	        {
+	            if (instr.OpCode.Code != Code.Call && instr.OpCode.Code != Code.Callvirt && instr.OpCode.Code != Code.Newobj)
+	                continue;
+	            var methodRef = instr.Operand as IMethod;
+	            if (methodRef == null)
+	                continue;
+
+                var type = GetType(methodRef.DeclaringType.Module, methodRef.DeclaringType);
+	            var methodDef = GetMethod(type, methodRef);
+	            if (methodDef == calledMethod)
+	                return true;
+            }
+
+	        return false;
+        }
+
 		public static IList<Instruction> GetArgPushes(IList<Instruction> instrs, int index) {
 			return GetArgPushes(instrs, ref index);
 		}

@@ -86,17 +86,28 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             var switchHeader = new LinkedList<Instruction>();
 
             // Start by unwinding the first four instructions
-            switchHeader.AddFirst(switchHeaderStack.Pop());
-            switchHeader.AddFirst(switchHeaderStack.Pop());
-            switchHeader.AddFirst(switchHeaderStack.Pop());
-            switchHeader.AddFirst(switchHeaderStack.Pop());
-            switchHeader.AddFirst(switchHeaderStack.Pop());
+            switchHeader.AddFirst(switchHeaderStack.Pop()); // switch
+            switchHeader.AddFirst(switchHeaderStack.Pop()); // rem.un
+            switchHeader.AddFirst(switchHeaderStack.Pop()); // ldc.i4
+            switchHeader.AddFirst(switchHeaderStack.Pop()); // stloc
+            switchHeader.AddFirst(switchHeaderStack.Pop()); // dup
 
             // No predicate (debugging)
             if (switchHeaderStack.Peek().IsLdcI4())
             {
                 predicate = ConfuserPredicate.None;
-                switchHeader.AddFirst(switchHeaderStack.Pop());
+                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
+            }
+            else if (switchHeaderStack.Peek().OpCode == OpCodes.Xor)
+            {
+                predicate = ConfuserPredicate.Normal;
+                switchHeader.AddFirst(switchHeaderStack.Pop()); // XOR
+                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
+                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
+            }
+            else
+            {
+                Debug.Assert(false, "Unkown switch header fingerprint");
             }
 
             var tracer = new SwitchTracer(_blocks, allBlocks, predicate, switchHeader.ToList())
@@ -439,8 +450,15 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     throw new Exception("wtf");
                 }
 
-                var switchTarget = ((Instruction[])SwitchInstruction.Operand)[switchValue.Value];
-                return SwitchBlock.Targets.Single(b => b.FirstInstr.Instruction == switchTarget);
+                /*var switchTarget = ((Instruction[])SwitchInstruction.Operand)[switchValue.Value];
+                Block targetBlock = SwitchBlock.Targets.SingleOrDefault(b => b.FirstInstr.Instruction == switchTarget);
+
+                if (targetBlock == null)
+                {
+                    Debugger.Break();
+                }*/
+
+                return SwitchBlock.Targets[switchValue.Value];
             }
 
             void EnqueueBranch(Block targetBlock)
