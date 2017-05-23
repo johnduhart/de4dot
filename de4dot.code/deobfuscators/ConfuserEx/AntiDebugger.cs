@@ -24,16 +24,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (method?.Body == null)
                 return;
 
-            foreach (var instr in method.Body.Instructions)
+            foreach (var m in DotNetUtils.GetMethodCalls(method))
             {
-                if (instr.OpCode.Code != Code.Call)
+                var calledMethod = m as MethodDef;
+                if (calledMethod == null)
                     continue;
-                var calledMethod = instr.Operand as MethodDef;
-                if (calledMethod == null || !calledMethod.IsStatic)
-                    continue;
+
                 if (!DotNetUtils.IsMethod(calledMethod, "System.Void", "()"))
                     continue;
-                var type = calledMethod.DeclaringType;
+
+                TypeDef type = calledMethod.DeclaringType;
                 if (type == null)
                     continue;
 

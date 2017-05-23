@@ -153,10 +153,13 @@
     <Compile Include="deobfuscators\CodeWall\randomc\CRandomMersenne.cs" />
     <Compile Include="deobfuscators\CodeWall\randomc\CRandomMother.cs" />
     <Compile Include="deobfuscators\CodeWall\StringDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\AntiDebugger.cs" />
     <Compile Include="deobfuscators\ConfuserEx\BlocksDeobfuscator.cs" />
     <Compile Include="deobfuscators\ConfuserEx\DeobfuscatorInfo.cs" />
     <Compile Include="deobfuscators\ConfuserEx\IAntiDebuggerLocator.cs" />
     <Compile Include="deobfuscators\ConfuserEx\IProtectionDetector.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\NormalMethodsDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\SafeAntiDebuggerLocator.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDebugger.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDumping.cs" />
     <Compile Include="deobfuscators\Confuser\Arg64ConstantsReader.cs" />

@@ -293,15 +293,15 @@ namespace de4dot.blocks {
 		}
 
 		public static IEnumerable<IMethod> GetMethodCalls(MethodDef method) {
-			var list = new List<IMethod>();
+			//var list = new List<IMethod>();
 			if (method.HasBody) {
 				foreach (var instr in method.Body.Instructions) {
 					var calledMethod = instr.Operand as IMethod;
-					if (calledMethod != null)
-						list.Add(calledMethod);
+				    if (calledMethod != null)
+				        yield return calledMethod;
 				}
 			}
-			return list;
+			//return list;
 		}
 
 		public static bool HasString(MethodDef method, string s) {
