@@ -1,13 +1,11 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using AssemblyData;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
@@ -19,6 +17,125 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         public void DeobfuscateBegin(Blocks blocks)
         {
             _blocks = blocks;
+        }
+
+        private bool ProcessScope(BlockScope scope)
+        {
+            bool modified = false;
+            foreach (BlockScope child in scope.Children)
+            {
+                modified |= ProcessScope(child);
+            }
+
+            if (scope.Blocks.Count > 0)
+                modified |= ProcessScopeBlocks(scope.Blocks);
+
+            return modified;
+        }
+
+        private bool ProcessScopeBlocks(IList<Block> blocks)
+        {
+            // Process the blocks in this scope
+            var instructions = blocks.GetInstructions();
+
+            // Find the first switch statement
+            Instr switchInstruction = instructions.FirstOrDefault(i => i.OpCode == OpCodes.Switch);
+            if (switchInstruction == null)
+                return false;
+
+            int switchIndex = instructions.IndexOf(switchInstruction);
+
+            // The switch statement has known instructions before it
+            if (switchIndex < 5)
+                return false;
+
+            if (instructions[switchIndex - 1].OpCode != OpCodes.Rem_Un
+                || !instructions[switchIndex - 2].IsLdcI4()
+                || !instructions[switchIndex - 3].IsStloc()
+                || instructions[switchIndex - 4].OpCode != OpCodes.Dup)
+                return false;
+
+            // Find the block containing the switch instruction
+            Block switchBlock = blocks.FirstOrDefault(b => b.Instructions.Any(i => i == switchInstruction));
+
+            // TODO: Fix this
+            if (switchBlock == null)
+                return false;
+
+            // Trace from the beginning of the method to find the switch header
+            var switchHeaderStack = new Stack<Instr>();
+            int currentInstructionIndex = 0;
+            do
+            {
+                Instr current = instructions[currentInstructionIndex];
+                switchHeaderStack.Push(current);
+
+                if (current == switchInstruction)
+                    break;
+
+                if (current.IsBr())
+                {
+                    switchHeaderStack.Pop();
+                    var target = (Instruction)current.Operand;
+                    Instr instr = instructions.SingleOrDefault(i => i.Instruction == target);
+                    Debug.Assert(instr != null, "Couldn't find br target");
+                    currentInstructionIndex = instructions.IndexOf(instr);
+                    continue;
+                }
+
+                currentInstructionIndex++;
+            } while (true);
+
+            // Figure out what predicate is in use
+            ConfuserPredicate predicate = ConfuserPredicate.None;
+            var switchHeader = new LinkedList<Instr>();
+
+            // Start by unwinding the first four instructions
+            switchHeader.AddFirst(switchHeaderStack.SafePop()); // switch
+            switchHeader.AddFirst(switchHeaderStack.SafePop()); // rem.un
+            switchHeader.AddFirst(switchHeaderStack.SafePop()); // ldc.i4
+            switchHeader.AddFirst(switchHeaderStack.SafePop()); // stloc
+            switchHeader.AddFirst(switchHeaderStack.SafePop()); // dup
+
+            // No predicate (debugging)
+            if (switchHeaderStack.Peek().IsLdcI4())
+            {
+                predicate = ConfuserPredicate.None;
+                switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
+            }
+            else if (switchHeaderStack.Peek().OpCode == OpCodes.Xor)
+            {
+                predicate = ConfuserPredicate.Normal;
+                switchHeader.AddFirst(switchHeaderStack.SafePop()); // XOR
+                switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
+                switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
+            }
+            else
+            {
+                Debug.Assert(false, "Unkown switch header fingerprint");
+            }
+
+            var tracer = new SwitchTracer(_blocks, blocks, predicate, switchHeader.Select(i => i.Instruction).ToList())
+            {
+                SwitchInstruction = switchInstruction.Instruction,
+                SwitchBlock = switchBlock
+            };
+            Block initialBlock;
+            tracer.Trace(out initialBlock);
+
+            foreach (Block switchBlockTarget in switchBlock.Targets)
+            {
+                switchBlockTarget.Sources.Remove(switchBlock);
+            }
+            switchBlock.Targets.Clear();
+            switchBlock.Remove(0, switchBlock.Instructions.Count);
+            //CleanupDeadSwitch(switchBlock);
+            blocks.First().SetNewFallThrough(initialBlock);
+
+            Logger.vv("ayyyyyy");
+
+
+            return true;
         }
 
         public bool Deobfuscate(List<Block> allBlocks)
@@ -39,97 +156,51 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (!instructions.Any(i => i.OpCode == OpCodes.Switch))
                 return false;
 
-            // Find the first switch statement
-            var switchInstruction = instructions.First(i => i.OpCode == OpCodes.Switch);
-            int switchIndex = instructions.IndexOf(switchInstruction);
+            // ----------------------------
 
-            // The switch statement has known instructions before it
-            if (switchIndex < 5)
-                return false;
 
-            if (instructions[switchIndex - 1].OpCode != OpCodes.Rem_Un
-                || !instructions[switchIndex - 2].IsLdcI4()
-                || !instructions[switchIndex - 3].IsStloc()
-                || instructions[switchIndex - 4].OpCode != OpCodes.Dup)
-                return false;
+            // Determine the method scope
+            BlockScope rootScope = GetBlockScope(_blocks.MethodBlocks);
+            return ProcessScope(rootScope);
+        }
 
-            // Find the block containing the switch instruction
-            Block switchBlock = allBlocks.FirstOrDefault(b => b.Instructions.Any(i => i.Instruction == switchInstruction));
+        private BlockScope GetBlockScope(ScopeBlock currentScopeBlock)
+        {
+            var blockScope = new BlockScope();
+            List<BaseBlock> baseBlocks = currentScopeBlock.BaseBlocks;
 
-            // TODO: Fix this
-            if (switchBlock == null)
-                return false;
+            var blockList = new List<Block>(baseBlocks.Count);
 
-            // Trace from the beginning of the method to find the switch header
-            var switchHeaderStack = new Stack<Instruction>();
-            int currentInstructionIndex = 0;
-            do
+            void CreateBlockScope()
             {
-                Instruction current = instructions[currentInstructionIndex];
-                switchHeaderStack.Push(current);
+                var scope = new BlockScope(blockList);
+                blockScope.AddChild(scope);
+                blockList.Clear();
+            }
 
-                if (current == switchInstruction)
-                    break;
-
-                if (current.IsBr())
+            foreach (BaseBlock baseBlock in baseBlocks)
+            {
+                var block = baseBlock as Block;
+                if (block != null)
                 {
-                    var target = (Instruction) current.Operand;
-                    currentInstructionIndex = instructions.IndexOf(target);
+                    blockList.Add(block);
                     continue;
                 }
 
-                currentInstructionIndex++;
-            } while (true);
+                // Found a non-block, empty the current blocks into a new scope
+                CreateBlockScope();
 
-            // Figure out what predicate is in use
-            ConfuserPredicate predicate = ConfuserPredicate.None;
-            var switchHeader = new LinkedList<Instruction>();
+                var scopeBlock = baseBlock as ScopeBlock;
+                Debug.Assert(scopeBlock != null, "scopeBlock != null");
 
-            // Start by unwinding the first four instructions
-            switchHeader.AddFirst(switchHeaderStack.Pop()); // switch
-            switchHeader.AddFirst(switchHeaderStack.Pop()); // rem.un
-            switchHeader.AddFirst(switchHeaderStack.Pop()); // ldc.i4
-            switchHeader.AddFirst(switchHeaderStack.Pop()); // stloc
-            switchHeader.AddFirst(switchHeaderStack.Pop()); // dup
-
-            // No predicate (debugging)
-            if (switchHeaderStack.Peek().IsLdcI4())
-            {
-                predicate = ConfuserPredicate.None;
-                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
-            }
-            else if (switchHeaderStack.Peek().OpCode == OpCodes.Xor)
-            {
-                predicate = ConfuserPredicate.Normal;
-                switchHeader.AddFirst(switchHeaderStack.Pop()); // XOR
-                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
-                switchHeader.AddFirst(switchHeaderStack.Pop()); // LDC.i4
-            }
-            else
-            {
-                Debug.Assert(false, "Unkown switch header fingerprint");
+                var child = GetBlockScope(scopeBlock);
+                blockScope.AddChild(child);
             }
 
-            var tracer = new SwitchTracer(_blocks, allBlocks, predicate, switchHeader.ToList())
-            {
-                SwitchInstruction = switchInstruction,
-                SwitchBlock = switchBlock
-            };
-            Block initialBlock;
-            tracer.Trace(out initialBlock);
+            if (blockList.Count > 0)
+                CreateBlockScope();
 
-            foreach (Block switchBlockTarget in switchBlock.Targets)
-            {
-                switchBlockTarget.Sources.Remove(switchBlock);
-            }
-            switchBlock.Targets.Clear();
-            switchBlock.Remove(0, switchBlock.Instructions.Count);
-            //CleanupDeadSwitch(switchBlock);
-            allBlocks.First().SetNewFallThrough(initialBlock);
-
-            Logger.vv("ayyyyyy");
-
-            return true;
+            return blockScope;
         }
 
         private void CleanupDeadSwitch(Block currentBlock, Stack<Block> currentPath = null)
@@ -159,13 +230,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             private readonly HashSet<Block> _processedBlocks = new HashSet<Block>();
 
             private readonly Blocks _blocks;
-            private readonly List<Block> _allBlocks;
+            private readonly IList<Block> _allBlocks;
             private readonly ConfuserPredicate _predicate;
             private readonly IList<Instruction> _switchHeaderInstructions;
             private readonly InstructionEmulator _instructionEmulator;
             private readonly Local _methodLocal;
 
-            public SwitchTracer(Blocks blocks, List<Block> allBlocks, ConfuserPredicate predicate, IList<Instruction> switchHeaderInstructions)
+            public SwitchTracer(Blocks blocks, IList<Block> allBlocks, ConfuserPredicate predicate, IList<Instruction> switchHeaderInstructions)
             {
                 _blocks = blocks;
                 _allBlocks = allBlocks;
@@ -268,7 +339,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     if (branchABlock.GetOnlyTarget() != branchBBlock.GetOnlyTarget())
                     {
                         // Missing condition
-                        Debugger.Break();
+                        //Debugger.Break();
+
+                        // This is likely a result of a jump outside the switch, make sure
+                        // branchA remains inside of the switch
+                        Debug.Assert(branchABlock.FallThrough == SwitchBlock);
+                        EnqueueBranch(branchABlock);
+                        return;
                     }
 
                     #region old crap
@@ -310,6 +387,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     #endregion
 
                     Block rootBlock = branchABlock.GetOnlyTarget();
+                    if (rootBlock.FallThrough != SwitchBlock && rootBlock.IsConditionalBranch())
+                    {
+                        // This is another conditional branch, add to processing
+                        EnqueueBranch(rootBlock);
+                        return;
+                    }
+
                     Debug.Assert(rootBlock.FallThrough == SwitchBlock);
 
                     void ProcessBranch(Block branchBlock)
@@ -431,6 +515,33 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     return;
                 }
 
+                // Try blocks have leave statements
+                if (currentBlock.LastInstr.IsLeave() && currentBlock.Parent is TryBlock)
+                {
+                    return;
+                }
+
+                // Catch blocks can rethrow
+                if (currentBlock.LastInstr.OpCode == OpCodes.Rethrow && currentBlock.Parent is HandlerBlock)
+                {
+                    return;
+                }
+
+                // Just a fallthrough?
+                if (currentBlock.Targets != null
+                    && currentBlock.Targets.Any(b => b != SwitchBlock)
+                    && currentBlock.IsFallThrough())
+                {
+                    EnqueueBranch(currentBlock.FallThrough);
+                    return;
+                }
+
+                // Switch fall-through, do nothing
+                if (SwitchBlock.FallThrough?.FallThrough == currentBlock)
+                {
+                    return;
+                }
+
                 Debug.Assert(false, "Unhandled state");
             }
 
@@ -445,10 +556,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 var switchValue = _instructionEmulator.Pop() as Int32Value;
 
-                if (switchValue == null)
-                {
-                    throw new Exception("wtf");
-                }
+                Debug.Assert(switchValue != null, "Next switch statement isn't available");
 
                 /*var switchTarget = ((Instruction[])SwitchInstruction.Operand)[switchValue.Value];
                 Block targetBlock = SwitchBlock.Targets.SingleOrDefault(b => b.FirstInstr.Instruction == switchTarget);
@@ -468,6 +576,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     // This might not be right
                     Debugger.Break();
                 }
+                Debug.Assert(targetBlock != SwitchBlock, "You can't enqueue the switch block that makes zero sense");
 
                 // Capture the current state
                 Value currentLocalValue = _instructionEmulator.GetLocal(_methodLocal);
@@ -493,6 +602,72 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             Unkown,
             None,
             Normal
+        }
+
+        class BlockScope
+        {
+            private readonly IList<BlockScope> _children = new List<BlockScope>();
+
+            public BlockScope()
+                : this(Enumerable.Empty<Block>())
+            {
+            }
+
+            public BlockScope(IEnumerable<Block> blocks)
+            {
+                Blocks = new List<Block>(blocks);
+            }
+
+            public BlockScope Parent { get; private set; }
+
+            public IList<BlockScope> Children
+            {
+                get { return _children; }
+            }
+
+            public IList<Block> Blocks { get; set; }
+
+            public void AddChild(BlockScope childScope)
+            {
+                childScope.Parent = this;
+                _children.Add(childScope);
+            }
+        }
+    }
+
+    internal static class ConfuserExtensions
+    {
+        public static Instruction SafePop(this Stack<Instruction> stack)
+        {
+            var instr = stack.Pop();
+            if (instr.OpCode == OpCodes.Pop && stack.Peek().OpCode == OpCodes.Dup)
+            {
+                stack.Pop();
+
+                return SafePop(stack);
+            }
+
+            return instr;
+        }
+
+        public static Instr SafePop(this Stack<Instr> stack)
+        {
+            var instr = stack.Pop();
+            if (instr.OpCode == OpCodes.Pop && stack.Peek().OpCode == OpCodes.Dup)
+            {
+                stack.Pop();
+
+                return SafePop(stack);
+            }
+
+            return instr;
+        }
+
+        public static IList<Instr> GetInstructions(this IEnumerable<Block> blocks)
+        {
+            var list = new List<Instr>(blocks.SelectMany(b => b.Instructions));
+
+            return list;
         }
     }
 }
