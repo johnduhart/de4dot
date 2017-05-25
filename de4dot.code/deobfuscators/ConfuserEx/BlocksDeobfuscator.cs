@@ -33,6 +33,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             return modified;
         }
 
+        private IEnumerable<IList<Instr>> TraceInstructions(IList<Block> blocks, Block switchBlock)
+        {
+            return new InstructionTracer(blocks, switchBlock).Trace();
+        }
+
         private bool ProcessScopeBlocks(IList<Block> blocks)
         {
             // Process the blocks in this scope
@@ -63,8 +68,15 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
 
             // Trace from the beginning of the method to find the switch header
+            IEnumerable<IList<Instr>> initialInstructions = TraceInstructions(blocks, switchBlock);
+
             var switchHeaderStack = new Stack<Instr>();
-            int currentInstructionIndex = 0;
+            foreach (Instr instruction in switchBlock.Instructions)
+            {
+                switchHeaderStack.Push(instruction);
+            }
+
+           /* int currentInstructionIndex = 0;
             do
             {
                 Instr current = instructions[currentInstructionIndex];
@@ -84,7 +96,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
 
                 currentInstructionIndex++;
-            } while (true);
+            } while (true);*/
 
             // Figure out what predicate is in use
             ConfuserPredicate predicate = ConfuserPredicate.None;
@@ -98,30 +110,33 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             switchHeader.AddFirst(switchHeaderStack.SafePop()); // dup
 
             // No predicate (debugging)
-            if (switchHeaderStack.Peek().IsLdcI4())
+            if (switchHeaderStack.Count == 0)
             {
                 predicate = ConfuserPredicate.None;
-                switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
+                //switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
             }
             else if (switchHeaderStack.Peek().OpCode == OpCodes.Xor)
             {
                 predicate = ConfuserPredicate.Normal;
                 switchHeader.AddFirst(switchHeaderStack.SafePop()); // XOR
                 switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
-                switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
+                //switchHeader.AddFirst(switchHeaderStack.SafePop()); // LDC.i4
             }
             else
             {
                 Debug.Assert(false, "Unkown switch header fingerprint");
             }
 
-            var tracer = new SwitchTracer(_blocks, blocks, predicate, switchHeader.Select(i => i.Instruction).ToList())
-            {
-                SwitchInstruction = switchInstruction.Instruction,
-                SwitchBlock = switchBlock
-            };
-            Block initialBlock;
-            tracer.Trace(out initialBlock);
+
+            // Figure out what instructions are relevent
+            var initialInstructions2 = initialInstructions
+                .Select(l => l.First(i => i.IsLdcI4()))
+                .Select(i => new List<Instr>(1){i})
+                .ToList();
+
+            var tracer = new SwitchTracer(_blocks, switchHeader.Select(i => i.Instruction).ToList(), switchBlock);
+
+            IList<Block> initialBlocks = tracer.Trace(initialInstructions2);
 
             foreach (Block switchBlockTarget in switchBlock.Targets)
             {
@@ -130,7 +145,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             switchBlock.Targets.Clear();
             switchBlock.Remove(0, switchBlock.Instructions.Count);
             //CleanupDeadSwitch(switchBlock);
-            blocks.First().SetNewFallThrough(initialBlock);
+            if (initialBlocks.Count == 1)
+            {
+                blocks[0].SetNewFallThrough(initialBlocks[0]);
+            }
 
             Logger.vv("ayyyyyy");
 
@@ -150,7 +168,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 || methodBody.Variables.All(v => v.Type != _blocks.Method.Module.CorLibTypes.UInt32))
                 return false;
 
-            IList<Instruction> instructions = methodBody.Instructions;
+            IList<Instr> instructions = allBlocks.GetInstructions();
 
             // The method must contain at least one switch statement
             if (!instructions.Any(i => i.OpCode == OpCodes.Switch))
@@ -229,35 +247,42 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             private readonly Queue<BranchState> _branchesToProcess = new Queue<BranchState>();
             private readonly HashSet<Block> _processedBlocks = new HashSet<Block>();
 
-            private readonly Blocks _blocks;
-            private readonly IList<Block> _allBlocks;
-            private readonly ConfuserPredicate _predicate;
             private readonly IList<Instruction> _switchHeaderInstructions;
             private readonly InstructionEmulator _instructionEmulator;
             private readonly Local _methodLocal;
 
-            public SwitchTracer(Blocks blocks, IList<Block> allBlocks, ConfuserPredicate predicate, IList<Instruction> switchHeaderInstructions)
+            public SwitchTracer(Blocks blocks, IList<Instruction> switchHeaderInstructions, Block switchBlock)
             {
-                _blocks = blocks;
-                _allBlocks = allBlocks;
-                _predicate = predicate;
                 _switchHeaderInstructions = switchHeaderInstructions;
-                _instructionEmulator = new InstructionEmulator(_blocks.Method);
+                SwitchBlock = switchBlock;
+
+                _instructionEmulator = new InstructionEmulator(blocks.Method);
                 _methodLocal = blocks.Method.Body.Variables.Last();
 
                 Debug.Assert(_methodLocal.Type.ElementType == ElementType.U4);
             }
 
-            public Instruction SwitchInstruction { get; set; }
-            public Block SwitchBlock { get; set; }
+            public Instruction SwitchInstruction => SwitchBlock.LastInstr.Instruction;
+            private Block SwitchBlock { get; }
 
             //
-            public void Trace(out Block initialBlock)
+            public IList<Block> Trace(IEnumerable<IList<Instr>> initialInstructions)
             {
+                var initialBlocks = new List<Block>();
+
                 // emulate the header
-                _instructionEmulator.Emulate(_switchHeaderInstructions.Take(_switchHeaderInstructions.Count - 1).Select(i => new Instr(i)));
-                initialBlock = NextSwitchBlock();
-                EnqueueBranch(initialBlock);
+                foreach (IList<Instr> initialInstruction in initialInstructions)
+                {
+                    _instructionEmulator.Emulate(initialInstruction);
+                    EmulateSwitchHeader();
+                    Block block = NextSwitchBlock();
+                    EnqueueBranch(block);
+                    initialBlocks.Add(block);
+                }
+
+                /*_instructionEmulator.Emulate(_switchHeaderInstructions.Take(_switchHeaderInstructions.Count - 1).Select(i => new Instr(i)));
+                Block initialBlock = NextSwitchBlock();
+                EnqueueBranch(initialBlock);*/
 
                 while (_branchesToProcess.Count > 0)
                 {
@@ -275,6 +300,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                     _processedBlocks.Add(currentBlock);
                 }
+
+                return initialBlocks;
             }
 
             private void ProcessBlock(Block currentBlock)
@@ -547,8 +574,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             private void EmulateSwitchHeader()
             {
-                _instructionEmulator.Emulate(_switchHeaderInstructions.Skip(1)
-                    .Take(_switchHeaderInstructions.Count - 2)
+                _instructionEmulator.Emulate(_switchHeaderInstructions
+                    .Take(_switchHeaderInstructions.Count - 1)
                     .Select(i => new Instr(i)));
             }
 
@@ -663,6 +690,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             return instr;
         }
 
+        /// <summary>
+        /// Dangerous, see remark.
+        /// Gets the instructions contained in the blocks
+        /// </summary>
+        /// <param name="blocks">The blocks</param>
+        /// <returns>Instructions</returns>
+        /// <remarks>
+        /// DANGER!! This will be missing instructions
+        /// that are stripped when converting to block
+        /// </remarks>
         public static IList<Instr> GetInstructions(this IEnumerable<Block> blocks)
         {
             var list = new List<Instr>(blocks.SelectMany(b => b.Instructions));

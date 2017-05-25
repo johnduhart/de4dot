@@ -159,6 +159,7 @@
     <Compile Include="deobfuscators\ConfuserEx\Deobfuscator.cs" />
     <Compile Include="deobfuscators\ConfuserEx\DeobfuscatorInfo.cs" />
     <Compile Include="deobfuscators\ConfuserEx\IAntiDebuggerLocator.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\InstructionTracer.cs" />
     <Compile Include="deobfuscators\ConfuserEx\IProtectionDetector.cs" />
     <Compile Include="deobfuscators\ConfuserEx\Lzma.cs" />
     <Compile Include="deobfuscators\ConfuserEx\MathsUtils.cs" />
