@@ -8,7 +8,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 {
     public class InstructionTracer
     {
-        private readonly IList<IList<Instr>> _traces = new List<IList<Instr>>();
+        //private readonly IList<IList<Instr>> _traces = new List<IList<Instr>>();
+        private readonly IList<IList<Block>> _blockTraces = new List<IList<Block>>();
         private readonly IList<Block> _blocks;
         private readonly Block _switchBlock;
 
@@ -18,14 +19,51 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             _switchBlock = switchBlock;
         }
 
-        public IEnumerable<IList<Instr>> Trace()
+        public IList<IList<Block>> Trace()
         {
-            TraceInner(new Stack<Instr>(), _blocks[0]);
+            TraceInner(new LinkedList<Block>(), _blocks[0]);
 
-            return _traces;
+            return _blockTraces;
         }
 
-        private void TraceInner(Stack<Instr> currentStack, Block currentBlock)
+        private void TraceInner(LinkedList<Block> blockChain, Block currentBlock)
+        {
+            while (true)
+            {
+                if (currentBlock == _switchBlock)
+                {
+                    _blockTraces.Add(new List<Block>(blockChain));
+                    return;
+                }
+
+                // Add the current block to the chain
+                blockChain.AddLast(currentBlock);
+
+                if (currentBlock.IsFallThrough())
+                {
+
+                    currentBlock = currentBlock.FallThrough;
+                    continue;
+                }
+
+                if (currentBlock.IsConditionalBranch())
+                {
+                    // Trace the target branch seperately
+                    TraceInner(new LinkedList<Block>(blockChain), currentBlock.Targets[0]);
+                    currentBlock = currentBlock.FallThrough;
+                    continue;
+                }
+
+                if (currentBlock.LastInstr.IsLeave() || currentBlock.LastInstr.OpCode == OpCodes.Ret)
+                {
+                    return;
+                }
+
+                Debug.Assert(false, "Reached bottom of while loop inside TraceInner");
+            }
+        }
+
+        /*private void TraceInner(Stack<Instr> currentStack, Block currentBlock)
         {
             while (true)
             {
@@ -58,7 +96,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 Debug.Assert(false, "Reached bottom of while loop inside TraceInner");
             }
-        }
+        }*/
 
         /*private void TraceInner(Stack<Instr> currentStack, int currentIndex)
         {

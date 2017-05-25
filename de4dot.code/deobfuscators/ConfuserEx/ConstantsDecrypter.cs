@@ -12,15 +12,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
     internal class ConstantsDecrypter : IProtectionDetector
     {
         private readonly ModuleDef _module;
+        private readonly ISimpleDeobfuscator _deobfuscator;
 
         private MethodDef _initMethod;
         private FieldDef _bField;
         private byte[] _bValue;
         private Dictionary<MethodDef, DecoderDesc> _getterMethods = new Dictionary<MethodDef, DecoderDesc>();
 
-        public ConstantsDecrypter(ModuleDef module)
+        public ConstantsDecrypter(ModuleDef module, ISimpleDeobfuscator deobfuscator)
         {
             _module = module;
+            _deobfuscator = deobfuscator;
         }
 
         public bool Detected => _initMethod != null;
@@ -47,6 +49,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 if (!DotNetUtils.IsMethod(calledMethod, "System.Void", "()"))
                     continue;
+
+                _deobfuscator.Deobfuscate(calledMethod, SimpleDeobfuscatorFlags.Force);
 
                 IList<Instruction> instructions = calledMethod.Body.Instructions;
 
@@ -129,7 +133,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             foreach (MethodDef getterMethod in getterMethods)
             {
+                _deobfuscator.Deobfuscate(getterMethod, SimpleDeobfuscatorFlags.Force);
                 IList<Instruction> instructions = getterMethod.Body.Instructions;
+
+                var blocks = new Blocks(getterMethod);
+
                 var stack = new Stack<byte>(3);
 
                 for (var i = 0; i < instructions.Count && stack.Count < 3; i++)
@@ -145,6 +153,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                     stack.Push((byte) ld.GetLdcI4Value());
                 }
+
+                Debug.Assert(stack.Count == 3, "Getter ID stack does not contain 3 bytes");
 
                 var desc = new DecoderDesc()
                 {

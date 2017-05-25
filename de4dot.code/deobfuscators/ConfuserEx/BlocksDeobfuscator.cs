@@ -33,7 +33,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             return modified;
         }
 
-        private IEnumerable<IList<Instr>> TraceInstructions(IList<Block> blocks, Block switchBlock)
+        private IList<IList<Block>> TraceInstructions(IList<Block> blocks, Block switchBlock)
         {
             return new InstructionTracer(blocks, switchBlock).Trace();
         }
@@ -68,7 +68,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
 
             // Trace from the beginning of the method to find the switch header
-            IEnumerable<IList<Instr>> initialInstructions = TraceInstructions(blocks, switchBlock);
+            IList<IList<Block>> initialInstructions = TraceInstructions(blocks, switchBlock);
 
             var switchHeaderStack = new Stack<Instr>();
             foreach (Instr instruction in switchBlock.Instructions)
@@ -129,14 +129,40 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
 
             // Figure out what instructions are relevent
-            var initialInstructions2 = initialInstructions
+            var initialBlocks = new List<Block>();
+
+            if (predicate == ConfuserPredicate.Normal)
+            {
+                foreach (IList<Block> initialBlockChain in initialInstructions)
+                {
+                    foreach (Block block in initialBlockChain.Reverse())
+                    {
+                        bool containsLdc = block.Instructions.Any(i => i.IsLdcI4());
+                        if (containsLdc)
+                        {
+                            initialBlocks.Add(block);
+
+                            // Hack for branches that dup, br, pop
+                            if (block.LastInstr.OpCode == OpCodes.Dup && block.FallThrough.FirstInstr.OpCode == OpCodes.Pop)
+                                block.Instructions.Remove(block.LastInstr);
+
+                            if (block.FallThrough != switchBlock)
+                                block.SetNewFallThrough(switchBlock);
+
+                            break;
+                        }
+                    }
+                }
+            }
+
+            /*var initialInstructions2 = initialInstructions
                 .Select(l => l.First(i => i.IsLdcI4()))
                 .Select(i => new List<Instr>(1){i})
-                .ToList();
+                .ToList();*/
 
             var tracer = new SwitchTracer(_blocks, switchHeader.Select(i => i.Instruction).ToList(), switchBlock);
 
-            IList<Block> initialBlocks = tracer.Trace(initialInstructions2);
+            tracer.Trace(initialBlocks);
 
             foreach (Block switchBlockTarget in switchBlock.Targets)
             {
@@ -145,10 +171,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             switchBlock.Targets.Clear();
             switchBlock.Remove(0, switchBlock.Instructions.Count);
             //CleanupDeadSwitch(switchBlock);
-            if (initialBlocks.Count == 1)
+            /*if (initialBlocks.Count == 1)
             {
                 blocks[0].SetNewFallThrough(initialBlocks[0]);
-            }
+            }*/
 
             Logger.vv("ayyyyyy");
 
@@ -266,9 +292,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             private Block SwitchBlock { get; }
 
             //
-            public IList<Block> Trace(IEnumerable<IList<Instr>> initialInstructions)
+            public void Trace(IList<Block> initialBlocks)
             {
-                var initialBlocks = new List<Block>();
+                /*var initialBlocks = new List<Block>();
 
                 // emulate the header
                 foreach (IList<Instr> initialInstruction in initialInstructions)
@@ -278,6 +304,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     Block block = NextSwitchBlock();
                     EnqueueBranch(block);
                     initialBlocks.Add(block);
+                }*/
+
+                foreach (Block initialBlock in initialBlocks)
+                {
+                    EnqueueBranch(initialBlock);
                 }
 
                 /*_instructionEmulator.Emulate(_switchHeaderInstructions.Take(_switchHeaderInstructions.Count - 1).Select(i => new Instr(i)));
@@ -301,7 +332,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     _processedBlocks.Add(currentBlock);
                 }
 
-                return initialBlocks;
+                //return initialBlocks;
             }
 
             private void ProcessBlock(Block currentBlock)
@@ -362,6 +393,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     // Navigate both branches to find a common root
                     Block branchABlock = currentBlock.FallThrough;
                     Block branchBBlock = currentBlock.Targets[0];
+
+                    if (_processedBlocks.Contains(branchABlock) && _processedBlocks.Contains(branchBBlock))
+                    {
+                        return;
+                    }
 
                     if (branchABlock.GetOnlyTarget() != branchBBlock.GetOnlyTarget())
                     {

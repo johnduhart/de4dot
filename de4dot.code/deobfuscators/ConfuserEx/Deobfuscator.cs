@@ -55,7 +55,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         {
             RemoveObfuscatorAttribute();
 
-            _constantsDecrypter = new ConstantsDecrypter(module);
+            _constantsDecrypter = new ConstantsDecrypter(module, DeobfuscatedFile);
             _constantsDecrypter.Detect();
             if (_constantsDecrypter.Detected)
             {
