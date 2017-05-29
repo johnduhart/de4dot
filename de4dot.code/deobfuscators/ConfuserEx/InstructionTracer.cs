@@ -36,6 +36,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     return;
                 }
 
+                if (!_blocks.Contains(currentBlock))
+                {
+                    // We've gone beyond the boundary of our current scope
+                    return;
+                }
+
                 // Add the current block to the chain
                 blockChain.AddLast(currentBlock);
 
@@ -56,7 +62,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 if (currentBlock.LastInstr.IsLeave()
                     || currentBlock.LastInstr.OpCode == OpCodes.Endfinally
-                    || currentBlock.LastInstr.OpCode == OpCodes.Ret)
+                    || currentBlock.LastInstr.OpCode == OpCodes.Ret
+                    || currentBlock.LastInstr.OpCode == OpCodes.Throw)
                 {
                     return;
                 }

@@ -55,13 +55,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         {
             RemoveObfuscatorAttribute();
 
-            /*_constantsDecrypter = new ConstantsDecrypter(module, DeobfuscatedFile);
+            _constantsDecrypter = new ConstantsDecrypter(module, DeobfuscatedFile);
             _constantsDecrypter.Detect();
             if (_constantsDecrypter.Detected)
             {
                 _constantsDecrypter.Init(staticStringInliner);
                 DeobfuscatedFile.StringDecryptersAdded();
-            }*/
+            }
 
             _antiDebugger = new AntiDebugger(module);
             _antiDebugger.Detect();

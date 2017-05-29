@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using AssemblyData;
 using de4dot.blocks;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -138,9 +139,18 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 var blocks = new Blocks(getterMethod);
 
-                var stack = new Stack<byte>(3);
+                var nonBranchBlocks = blocks.MethodBlocks.BaseBlocks.OfType<Block>()
+                    .Where(b => !b.IsConditionalBranch() && b.LastInstr.OpCode != OpCodes.Ret && !b.IsNopBlock())
+                    .ToList();
 
-                for (var i = 0; i < instructions.Count && stack.Count < 3; i++)
+
+                //var stack = new Stack<byte>(3);
+
+                /*var initialBlock = (Block) blocks.MethodBlocks.BaseBlocks[0];
+                Debug.Assert(initialBlock.LastInstr.OpCode == OpCodes.Bne_Un_S || initialBlock.LastInstr.OpCode == OpCodes.Bne_Un);
+                stack.Push((byte) initialBlock.Instructions[initialBlock.Instructions.Count - 2].GetLdcI4Value());*/
+
+                /*for (var i = 0; i < instructions.Count && stack.Count < 3; i++)
                 {
                     Instruction instruction = instructions[i];
 
@@ -154,17 +164,60 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     stack.Push((byte) ld.GetLdcI4Value());
                 }
 
-                Debug.Assert(stack.Count == 3, "Getter ID stack does not contain 3 bytes");
+                Debug.Assert(stack.Count == 3, "Getter ID stack does not contain 3 bytes");*/
 
                 var desc = new DecoderDesc()
                 {
-                    InitializerID = stack.Pop(),
-                    NumberID = stack.Pop(),
-                    StringID = stack.Pop()
+                    //InitializerID = stack.Pop(),
+                    //NumberID = stack.Pop(),
+                    //StringID = stack.Pop()
                 };
 
+                foreach (Block block in nonBranchBlocks)
+                {
+                    // Figure out the value for this block
+                    Debug.Assert(block.Sources.Count == 1);
+                    var sourceBlock = block.Sources[0];
+
+                    if (sourceBlock.IsNopBlock())
+                        sourceBlock = sourceBlock.Sources[0];
+
+                    var loadLdc = sourceBlock.Instructions[sourceBlock.Instructions.Count - 2];
+                    Debug.Assert(loadLdc.OpCode == OpCodes.Ldc_I8);
+
+                    var value = (byte) (long) loadLdc.Operand;
+
+                    // Let's see if we can get away without checking the branch type
+                    /*if (sourceBlock.LastInstr.OpCode == OpCodes.Bne_Un ||
+                        sourceBlock.LastInstr.OpCode == OpCodes.Bne_Un_S)
+                    {
+
+                    }*/
+
+                    // Fingerprint the block type
+                    Instr callInstr = block.Instructions.FirstOrDefault(i => i.OpCode == OpCodes.Call);
+                    Debug.Assert(callInstr != null, "Getter block doesn't make any call");
+                    var firstCall = (MemberRef) callInstr.Operand;
+
+                    switch (firstCall.FullName)
+                    {
+                        case "System.Text.Encoding System.Text.Encoding::get_UTF8()":
+                            desc.StringID = value;
+                            continue;
+                        case "System.Void System.Buffer::BlockCopy(System.Array,System.Int32,System.Array,System.Int32,System.Int32)":
+                            desc.InitializerID = value;
+                            continue;
+                        case "System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)":
+                            desc.NumberID = value;
+                            continue;
+                        default:
+                            Debug.Assert(false, "Invalid getter call found");
+                            break;
+                    }
+                }
+
                 // NormalMode
-                for (var i = 0; i < instructions.Count && stack.Count < 3; i++)
+                for (var i = 0; i < instructions.Count; i++)
                 {
                     Instruction instruction = instructions[i];
 

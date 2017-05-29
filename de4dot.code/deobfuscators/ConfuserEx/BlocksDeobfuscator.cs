@@ -171,12 +171,20 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
             }
 
+            //Debug.Assert(initialBlocks.Count > 0, "There are no initial blocks for tracing");
+            if (initialBlocks.Count == 0)
+            {
+                Logger.w("No initial blocks found...");
+                return false;
+            }
+
             /*var initialInstructions2 = initialInstructions
                 .Select(l => l.First(i => i.IsLdcI4()))
                 .Select(i => new List<Instr>(1){i})
                 .ToList();*/
 
-            var tracer = new SwitchTracer(_blocks, switchHeader.Select(i => i.Instruction).ToList(), switchBlock);
+            var tracer = new SwitchTracer(_blocks.Method, switchHeader.Select(i => i.Instruction).ToList(), switchBlock,
+                blocks);
 
             tracer.Trace(initialBlocks);
 
@@ -291,16 +299,18 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             private readonly HashSet<Block> _processedBlocks = new HashSet<Block>();
 
             private readonly IList<Instruction> _switchHeaderInstructions;
+            private readonly IList<Block> _blocksInScope;
             private readonly InstructionEmulator _instructionEmulator;
             private readonly Local _methodLocal;
 
-            public SwitchTracer(Blocks blocks, IList<Instruction> switchHeaderInstructions, Block switchBlock)
+            public SwitchTracer(MethodDef method, IList<Instruction> switchHeaderInstructions, Block switchBlock, IList<Block> blocksInScope)
             {
                 _switchHeaderInstructions = switchHeaderInstructions;
+                _blocksInScope = blocksInScope;
                 SwitchBlock = switchBlock;
 
-                _instructionEmulator = new InstructionEmulator(blocks.Method);
-                _methodLocal = blocks.Method.Body.Variables.Last();
+                _instructionEmulator = new InstructionEmulator(method);
+                _methodLocal = method.Body.Variables.Last();
 
                 Debug.Assert(_methodLocal.Type.ElementType == ElementType.U4);
             }
@@ -415,6 +425,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         return;
                     }
 
+                    if (!_blocksInScope.Contains(branchABlock) && !_blocksInScope.Contains(branchBBlock))
+                    {
+                        return;
+                    }
+
+                    if (branchABlock.LastInstr.IsScopeExit() && branchBBlock.LastInstr.IsScopeExit())
+                    {
+                        return;
+                    }
+
                     if (branchABlock.GetOnlyTarget() != branchBBlock.GetOnlyTarget())
                     {
                         // Missing condition
@@ -422,9 +442,46 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                         // This is likely a result of a jump outside the switch, make sure
                         // branchA remains inside of the switch
-                        Debug.Assert(branchABlock.FallThrough == SwitchBlock);
-                        EnqueueBranch(branchABlock);
+
+                        if (branchABlock.FallThrough == SwitchBlock)
+                        {
+                            EnqueueBranch(branchABlock);
+                            return;
+                        }
+
+                        // http://i.jhd5.net/2017/05/2017-05-28_21-10-17.png
+                        if (branchBBlock == branchABlock.FallThrough
+                            && branchBBlock.GetOnlyTarget() == SwitchBlock)
+                        {
+                            Debug.Assert(branchBBlock.LastInstr.IsLdcI4());
+                            EnqueueBranch(branchBBlock);
+                            return;
+                        }
+
+                        // FUCK http://i.jhd5.net/2017/05/2017-05-28_21-18-05.png
+                        if (branchBBlock == branchABlock.FallThrough
+                            && branchBBlock.IsConditionalBranch())
+                        {
+                            EnqueueBranch(branchBBlock);
+                            return;
+                        }
+
+                        // FUCKx2 http://i.jhd5.net/2017/05/2017-05-28_21-25-54.png
+                        if (branchBBlock == branchABlock.FallThrough
+                            && branchBBlock.LastInstr.IsScopeExit())
+                        {
+                            return;
+                        }
+
+                        // I give up
+                        if (_blocksInScope.Contains(branchBBlock))
+                            EnqueueBranch(branchBBlock);
+                        if (_blocksInScope.Contains(branchABlock))
+                            EnqueueBranch(branchABlock);
+
                         return;
+
+                        //Debug.Assert(false, "Conditional branch target hell");
                     }
 
                     #region old crap
@@ -466,10 +523,27 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     #endregion
 
                     Block rootBlock = branchABlock.GetOnlyTarget();
+
+                    // http://i.jhd5.net/2017/05/chrome_2017-05-28_22-53-41.png
+                    if (rootBlock == null && branchABlock.LastInstr.IsScopeExit())
+                    {
+                        EnqueueBranch(branchBBlock);
+                        return;
+                    }
+
+                    Debug.Assert(rootBlock != null, "root block was null");
                     if (rootBlock.FallThrough != SwitchBlock && rootBlock.IsConditionalBranch())
                     {
                         // This is another conditional branch, add to processing
                         EnqueueBranch(rootBlock);
+                        return;
+                    }
+
+                    // http://i.jhd5.net/2017/05/2017-05-28_22-49-55.png
+                    if (rootBlock == SwitchBlock)
+                    {
+                        EnqueueBranch(branchABlock);
+                        EnqueueBranch(branchBBlock);
                         return;
                     }
 
@@ -595,6 +669,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     return;
                 }
 
+                if (currentBlock.IsNopBlock())
+                {
+                    EnqueueBranch(currentBlock.FallThrough);
+                    return;
+                }
+
                 // Try blocks have leave statements
                 if (currentBlock.LastInstr.IsLeave() && currentBlock.Parent is TryBlock)
                 {
@@ -619,6 +699,23 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 // Switch fall-through, do nothing
                 if (SwitchBlock.FallThrough?.FallThrough == currentBlock)
                 {
+                    return;
+                }
+
+                if (currentBlock.LastInstr.OpCode == OpCodes.Switch)
+                {
+                    // fuck.
+                    foreach (Block blockTarget in currentBlock.GetTargets())
+                    {
+                        EnqueueBranch(blockTarget);
+                    }
+                    return;
+                }
+
+                // http://i.jhd5.net/2017/05/2017-05-28_22-07-00.png
+                if (currentBlock.IsFallThrough())
+                {
+                    EnqueueBranch(currentBlock.FallThrough);
                     return;
                 }
 
@@ -657,6 +754,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     Debugger.Break();
                 }
                 Debug.Assert(targetBlock != SwitchBlock, "You can't enqueue the switch block that makes zero sense");
+
+                if (!_blocksInScope.Contains(targetBlock))
+                {
+                    // This block is outside of our scope and should be left alone
+                    return;
+                }
 
                 // Capture the current state
                 Value currentLocalValue = _instructionEmulator.GetLocal(_methodLocal);
@@ -734,8 +837,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             foreach (var scope in currentScope.Children)
             {
-                string scopeId = "scope_" + scope.GetHashCode();
+                string scopeId = "cluster_" + scope.GetHashCode();
                 builder.AppendLine($"subgraph {scopeId} {{");
+                builder.AppendLine("color=blue;");
 
                 if (currentScope.Children.Count > 0)
                 {
@@ -758,7 +862,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         instructionBuilder.Append("\\l");
                     }
 
-                    builder.AppendLine($"{blockId} [label=\"{instructionBuilder}\"]");
+                    builder.AppendLine($"{blockId} [label=\"{instructionBuilder}\"];");
                     instructionBuilder.Clear();
                 }
 
@@ -882,6 +986,20 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             var list = new List<Instr>(blocks.SelectMany(b => b.Instructions));
 
             return list;
+        }
+
+        public static bool IsScopeExit(this Instr instr)
+        {
+            return instr.Instruction.IsScopeExit();
+        }
+
+        public static bool IsScopeExit(this Instruction instruction)
+        {
+            return instruction.OpCode == OpCodes.Leave
+                   || instruction.OpCode == OpCodes.Leave_S
+                   || instruction.OpCode == OpCodes.Ret
+                   || instruction.OpCode == OpCodes.Throw
+                   || instruction.OpCode == OpCodes.Endfinally;
         }
     }
 }
