@@ -54,7 +54,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 }
 
-                if (currentBlock.LastInstr.IsLeave() || currentBlock.LastInstr.OpCode == OpCodes.Ret)
+                if (currentBlock.LastInstr.IsLeave()
+                    || currentBlock.LastInstr.OpCode == OpCodes.Endfinally
+                    || currentBlock.LastInstr.OpCode == OpCodes.Ret)
                 {
                     return;
                 }

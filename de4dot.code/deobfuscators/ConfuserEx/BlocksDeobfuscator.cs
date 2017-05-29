@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
@@ -133,23 +134,38 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             if (predicate == ConfuserPredicate.Normal)
             {
-                foreach (IList<Block> initialBlockChain in initialInstructions)
+                // Does the switch header contain the first instruction? http://i.jhd5.net/2017/05/2017-05-28_19-32-09.png
+                if (switchBlock.Instructions.Count == 8 && switchBlock.FirstInstr.IsLdcI4())
                 {
-                    foreach (Block block in initialBlockChain.Reverse())
+                    // Okay, let's simulate this to find the first block. ugh.
+                    var emulator = new InstructionEmulator(_blocks.Method);
+                    emulator.Emulate(switchBlock.FirstInstr.Instruction);
+                    emulator.Emulate(switchHeader.TakeWhile(i => i.OpCode != OpCodes.Switch));
+                    var switchValue = emulator.Pop() as Int32Value;
+                    Debug.Assert(switchValue != null, "Next switch statement isn't available");
+
+                    initialBlocks.Add(switchBlock.Targets[switchValue.Value]);
+                }
+                else
+                {
+                    foreach (IList<Block> initialBlockChain in initialInstructions)
                     {
-                        bool containsLdc = block.Instructions.Any(i => i.IsLdcI4());
-                        if (containsLdc)
+                        foreach (Block block in initialBlockChain.Reverse())
                         {
-                            initialBlocks.Add(block);
+                            bool containsLdc = block.Instructions.Any(i => i.IsLdcI4());
+                            if (containsLdc)
+                            {
+                                initialBlocks.Add(block);
 
-                            // Hack for branches that dup, br, pop
-                            if (block.LastInstr.OpCode == OpCodes.Dup && block.FallThrough.FirstInstr.OpCode == OpCodes.Pop)
-                                block.Instructions.Remove(block.LastInstr);
+                                // Hack for branches that dup, br, pop
+                                if (block.LastInstr.OpCode == OpCodes.Dup && block.FallThrough.FirstInstr.OpCode == OpCodes.Pop)
+                                    block.Instructions.Remove(block.LastInstr);
 
-                            if (block.FallThrough != switchBlock)
-                                block.SetNewFallThrough(switchBlock);
+                                if (block.FallThrough != switchBlock)
+                                    block.SetNewFallThrough(switchBlock);
 
-                            break;
+                                break;
+                            }
                         }
                     }
                 }
@@ -205,6 +221,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             // Determine the method scope
             BlockScope rootScope = GetBlockScope(_blocks.MethodBlocks);
+            string graphTest = GenerateGraphviz(rootScope);
             return ProcessScope(rootScope);
         }
 
@@ -288,7 +305,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 Debug.Assert(_methodLocal.Type.ElementType == ElementType.U4);
             }
 
-            public Instruction SwitchInstruction => SwitchBlock.LastInstr.Instruction;
             private Block SwitchBlock { get; }
 
             //
@@ -566,7 +582,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 // Method return statement
                 if (currentBlock.CountTargets() == 0
-                    && currentBlock.LastInstr.OpCode == OpCodes.Ret)
+                    && (currentBlock.LastInstr.OpCode == OpCodes.Ret
+                        || currentBlock.LastInstr.OpCode == OpCodes.Throw))
                 {
                     // Oh cool, return statement. We're good, nothing to do here
                     return;
@@ -694,6 +711,130 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 childScope.Parent = this;
                 _children.Add(childScope);
+            }
+        }
+
+        private static string GenerateGraphviz(BlockScope rootScope)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("digraph blockscopes {");
+            builder.AppendLine("node [shape=box]");
+
+            GenerateGraphviz_Subgraph(rootScope, builder);
+            GenerateGraphviz_Transitions(rootScope, builder);
+
+            builder.AppendLine("}");
+
+            return builder.ToString();
+        }
+
+        private static void GenerateGraphviz_Subgraph(BlockScope currentScope, StringBuilder builder)
+        {
+            var instructionBuilder = new StringBuilder();
+
+            foreach (var scope in currentScope.Children)
+            {
+                string scopeId = "scope_" + scope.GetHashCode();
+                builder.AppendLine($"subgraph {scopeId} {{");
+
+                if (currentScope.Children.Count > 0)
+                {
+                    GenerateGraphviz_Subgraph(scope, builder);
+                }
+
+                builder.AppendLine();
+
+                foreach (Block block in scope.Blocks)
+                {
+                    string blockId = "block_" + block.GetHashCode();
+
+                    foreach (Instr instr in block.Instructions)
+                    {
+                        string instructionString = instr.ToString();
+                        if (instructionString.Length > 30)
+                            instructionString = instructionString.Substring(0, 30) + "...";
+
+                        EscapeString(instructionBuilder, instructionString);
+                        instructionBuilder.Append("\\l");
+                    }
+
+                    builder.AppendLine($"{blockId} [label=\"{instructionBuilder}\"]");
+                    instructionBuilder.Clear();
+                }
+
+                /*if (scope.Blocks.Count > 0)
+                {
+                    IEnumerable<string> nodes = scope.Blocks.Select(b => "block_" + b.GetHashCode());
+                    builder.AppendLine($"{string.Join(";", nodes)};");
+                }*/
+
+                builder.AppendLine("}");
+            }
+        }
+
+        static void EscapeString(StringBuilder sb, string s)
+        {
+            if (s == null)
+            {
+                sb.Append("null");
+                return;
+            }
+
+            foreach (var c in s)
+            {
+                if ((int)c < 0x20)
+                {
+                    switch (c)
+                    {
+                        case '\a': sb.Append(@"\a"); break;
+                        case '\b': sb.Append(@"\b"); break;
+                        case '\f': sb.Append(@"\f"); break;
+                        case '\n': sb.Append(@"\n"); break;
+                        case '\r': sb.Append(@"\r"); break;
+                        case '\t': sb.Append(@"\t"); break;
+                        case '\v': sb.Append(@"\v"); break;
+                        default:
+                            sb.Append(string.Format(@"\u{0:X4}", (int)c));
+                            break;
+                    }
+                }
+                else if (c == '\\' || c == '"')
+                {
+                    sb.Append('\\');
+                    sb.Append(c);
+                }
+                else if (c > 8200)
+                {
+                    sb.Append(string.Format(@"\u{0:X4}", (int)c));
+                }
+                else
+                    sb.Append(c);
+            }
+        }
+
+        private static void GenerateGraphviz_Transitions(BlockScope currentScope, StringBuilder builder)
+        {
+            foreach (BlockScope scopeChild in currentScope.Children)
+            {
+                GenerateGraphviz_Transitions(scopeChild, builder);
+            }
+
+            foreach (Block block in currentScope.Blocks)
+            {
+                if (block.FallThrough != null)
+                {
+                    builder.AppendLine($"block_{block.GetHashCode()} -> block_{block.FallThrough.GetHashCode()};");
+                }
+
+                if (block.Targets != null)
+                    foreach (Block target in block.Targets)
+                    {
+                        string lineColor = "orangered";
+                        if (block.LastInstr.OpCode == OpCodes.Switch)
+                            lineColor = "blueviolet";
+
+                        builder.AppendLine($"block_{block.GetHashCode()} -> block_{target.GetHashCode()} [color={lineColor}];");
+                    }
             }
         }
     }
