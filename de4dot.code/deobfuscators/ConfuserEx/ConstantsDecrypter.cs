@@ -51,7 +51,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 if (!DotNetUtils.IsMethod(calledMethod, "System.Void", "()"))
                     continue;
 
+                string preGraph = new Blocks(calledMethod).ToBlockScope().ToGraph();
                 _deobfuscator.Deobfuscate(calledMethod, SimpleDeobfuscatorFlags.Force);
+                string postGraph = new Blocks(calledMethod).ToBlockScope().ToGraph();
 
                 IList<Instruction> instructions = calledMethod.Body.Instructions;
 
@@ -263,6 +265,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
 
                 keySeed = (uint) ldInstr.GetLdcI4Value();
+                break;
             }
             var key = new uint[16];
             for (int i = 0; i < 16; i++)

@@ -154,7 +154,10 @@
     <Compile Include="deobfuscators\CodeWall\randomc\CRandomMother.cs" />
     <Compile Include="deobfuscators\CodeWall\StringDecrypter.cs" />
     <Compile Include="deobfuscators\ConfuserEx\AntiDebugger.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\BlockScope.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\BlockScopeGraphviz.cs" />
     <Compile Include="deobfuscators\ConfuserEx\BlocksDeobfuscator.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ConfuserExtensions.cs" />
     <Compile Include="deobfuscators\ConfuserEx\ConstantsDecrypter.cs" />
     <Compile Include="deobfuscators\ConfuserEx\Deobfuscator.cs" />
     <Compile Include="deobfuscators\ConfuserEx\DeobfuscatorInfo.cs" />
@@ -165,6 +168,8 @@
     <Compile Include="deobfuscators\ConfuserEx\MathsUtils.cs" />
     <Compile Include="deobfuscators\ConfuserEx\NormalMethodsDecrypter.cs" />
     <Compile Include="deobfuscators\ConfuserEx\SafeAntiDebuggerLocator.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\BlockScopeBuilder.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\SwitchTracer.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDebugger.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDumping.cs" />
     <Compile Include="deobfuscators\Confuser\Arg64ConstantsReader.cs" />

@@ -11,11 +11,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 {
     internal class NormalMethodsDecrypter : IProtectionDetector
     {
+        private readonly ISimpleDeobfuscator _simpleDeobfuscator;
         private readonly ModuleDef _module;
 
-        public NormalMethodsDecrypter(ModuleDef module)
+        public NormalMethodsDecrypter(ModuleDef module, ISimpleDeobfuscator simpleDeobfuscator)
         {
             _module = module;
+            _simpleDeobfuscator = simpleDeobfuscator;
         }
 
         public bool Detected => InitMethod != null;
@@ -51,11 +53,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (declaringType == null)
                 return false;
 
+            _simpleDeobfuscator.Deobfuscate(initMethod);
+
             MethodDef virtProtect = DotNetUtils.GetPInvokeMethod(declaringType, "kernel32", "VirtualProtect");
             if (virtProtect == null)
                 return false;
 
-            if (!DotNetUtils.CallsMethod(initMethod, virtProtect))
+            /*if (!DotNetUtils.CallsMethod(initMethod, virtProtect))
+                return false;*/
+
+            if (!DotNetUtils.CallsMethod(initMethod, "System.Boolean", "(System.IntPtr,System.UInt32,System.UInt32,System.UInt32&)"))
                 return false;
 
             if (!DotNetUtils.CallsMethod(initMethod,
@@ -122,10 +129,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     key[i & 0xf] = (key[i & 0xf] ^ data) + 0x3dbb2819;
                 }
             }
-
-            var module = ModuleDefMD.Load(fileBytes);
-            var mainMethod = module.ResolveMethod(4);
-            int tdddmp = mainMethod.Body.Instructions.Count;
 
             return true;
         }

@@ -22,12 +22,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         public override string Type => DeobfuscatorInfo.TheType;
         public override string TypeLong => DeobfuscatorInfo.TheName;
-
         public override string Name => DeobfuscatorInfo.TheName;
+        protected override bool CanInlineMethods => true;
 
         public override IEnumerable<IBlocksDeobfuscator> BlocksDeobfuscators
         {
-            get { yield return new BlocksDeobfuscator(); }
+            get
+            {
+                yield return new BlocksDeobfuscator();
+                yield return new MethodCallInliner(false);
+            }
         }
 
         private IEnumerable<IProtectionDetector> AllDetectors
@@ -43,7 +47,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         protected override void ScanForObfuscator()
         {
-            _normalMethodsDecrypter = new NormalMethodsDecrypter(module);
+            _normalMethodsDecrypter = new NormalMethodsDecrypter(module, DeobfuscatedFile);
             _normalMethodsDecrypter.Detect();
             if (_normalMethodsDecrypter.Detected)
                 return;

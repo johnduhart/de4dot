@@ -6,6 +6,88 @@ using dnlib.DotNet.Emit;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
+    internal class BranchTargetTracer
+    {
+        private readonly IList<Block> _blocks;
+        private readonly Block _switchBlock;
+        private readonly IReadOnlyCollection<Block> _processedBlocks;
+
+        private IList<IList<Block>> _blockTraces;
+
+        public BranchTargetTracer(IList<Block> blocks, Block switchBlock, IReadOnlyCollection<Block> processedBlocks)
+        {
+            _blocks = blocks;
+            _switchBlock = switchBlock;
+            _processedBlocks = processedBlocks;
+        }
+
+        public IList<IList<Block>> TraceFrom(Block block)
+        {
+            _blockTraces = new List<IList<Block>>();
+
+            TraceInner(new LinkedList<Block>(), block);
+
+            return _blockTraces;
+        }
+
+        private void TraceInner(LinkedList<Block> blockChain, Block currentBlock)
+        {
+            while (true)
+            {
+                if (currentBlock == _switchBlock)
+                {
+                    _blockTraces.Add(new List<Block>(blockChain));
+                    return;
+                }
+
+                if (!_blocks.Contains(currentBlock))
+                {
+                    // We've gone beyond the boundary of our current scope
+                    return;
+                }
+
+                if (blockChain.Contains(currentBlock))
+                {
+                    //Debugger.Break();
+                    return;
+                }
+
+                if (_processedBlocks.Contains(currentBlock))
+                {
+                    return;
+                }
+
+                // Add the current block to the chain
+                blockChain.AddLast(currentBlock);
+
+                if (currentBlock.IsFallThrough())
+                {
+
+                    currentBlock = currentBlock.FallThrough;
+                    continue;
+                }
+
+                if (currentBlock.IsConditionalBranch())
+                {
+                    // Trace the target branch seperately
+                    TraceInner(new LinkedList<Block>(blockChain), currentBlock.Targets[0]);
+                    currentBlock = currentBlock.FallThrough;
+                    continue;
+                }
+
+                if (currentBlock.LastInstr.IsLeave()
+                    || currentBlock.LastInstr.OpCode == OpCodes.Endfinally
+                    || currentBlock.LastInstr.OpCode == OpCodes.Ret
+                    || currentBlock.LastInstr.OpCode == OpCodes.Throw)
+                {
+                    return;
+                }
+
+                Debug.Assert(false, "Reached bottom of while loop inside TraceInner");
+            }
+        }
+    }
+
     public class InstructionTracer
     {
         //private readonly IList<IList<Instr>> _traces = new List<IList<Instr>>();
@@ -39,6 +121,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 if (!_blocks.Contains(currentBlock))
                 {
                     // We've gone beyond the boundary of our current scope
+                    return;
+                }
+
+                if (blockChain.Contains(currentBlock))
+                {
+                    //Debugger.Break();
                     return;
                 }
 
